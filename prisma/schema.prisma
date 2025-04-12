@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AirQuality {
+  id                  Int       @id @default(autoincrement())
+  datetime            DateTime
+  from_node           String?
+  pm10Standard        Float?
+  pm25Standard        Float?
+  pm100Standard       Float?
+  pm10Environmental   Float?
+  pm25Environmental   Float?
+  pm100Environmental  Float?
+  rxSnr               Float?
+  hopLimit            Float?
+  rxRssi              Float?
+  hopStart            Float?
+  from_short_name     String?
+  temperature         Float?
+  relativeHumidity    Float?
+  barometricPressure  Float?
+  gasResistance       Float?
+  iaq                 Float?
+  latitude            Float?
+  longitude           Float?
+  elevation           String?
+
+  @@index([datetime])
+  @@map("air_quality")
+}
+
+model Query {
+  id               String    @id @default(uuid())
+  question         String
+  sql_query        String?
+  result_summary   Json?
+  analysis         String?
+  timestamp        DateTime  @default(now())
+
+  @@map("queries")
+}

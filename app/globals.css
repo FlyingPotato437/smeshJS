@@ -1,0 +1,366 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    
+    /* Stanford Cardinal Red - ensuring consistency */
+    --primary: 0 72% 31%;  /* #8C1515 - Stanford Cardinal Red */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 0 54% 95%; /* Light red for secondary */
+    --secondary-foreground: 0 72% 30%;
+    
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    
+    --accent: 0 54% 90%;
+    --accent-foreground: 0 72% 30%;
+    
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 0 72% 31%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    
+    /* Stanford Cardinal Red - Darker */
+    --primary: 0 72% 35%;  /* Brighter in dark mode */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 0 30% 20%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    
+    --accent: 0 30% 25%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 0 65% 35%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom Animations */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float var(--duration, 15s) ease-in-out infinite;
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Fade Up Animation */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeUp {
+  animation: fadeUp 0.6s ease-out forwards;
+}
+
+/* Fade Down Animation */
+@keyframes fadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeDown {
+  animation: fadeDown 0.6s ease-out forwards;
+}
+
+/* Scale Animation */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.4s ease-out forwards;
+}
+
+/* Gradient Animations */
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 15s ease infinite;
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Smooth Transitions */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  @apply animate-spin rounded-full border-4 border-gray-300 dark:border-gray-600;
+  border-top-color: #8C1515; /* Stanford Cardinal */
+  width: 2rem;
+  height: 2rem;
+}
+
+/* Loader */
+.loader {
+  @apply animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500 mx-auto;
+}
+
+/* Background Gradient Animation */
+@keyframes background-gradient {
+  0% {
+    transform: translate(
+      calc(var(--tx-1, 0) * 100%),
+      calc(var(--ty-1, 0) * 100%)
+    );
+  }
+  25% {
+    transform: translate(
+      calc(var(--tx-2, 0) * 100%),
+      calc(var(--ty-2, 0) * 100%)
+    );
+  }
+  50% {
+    transform: translate(
+      calc(var(--tx-3, 0) * 100%),
+      calc(var(--ty-3, 0) * 100%)
+    );
+  }
+  75% {
+    transform: translate(
+      calc(var(--tx-4, 0) * 100%),
+      calc(var(--ty-4, 0) * 100%)
+    );
+  }
+  100% {
+    transform: translate(
+      calc(var(--tx-1, 0) * 100%),
+      calc(var(--ty-1, 0) * 100%)
+    );
+  }
+}
+
+.animate-background-gradient {
+  animation: background-gradient calc(var(--background-gradient-speed, 5) * 4s) ease infinite;
+}
+
+/* Card Styles */
+.glass-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+}
+
+.glass-card.dark {
+  background: rgba(20, 25, 36, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Button Styles */
+.btn-gradient {
+  background-image: var(--gradient-blue);
+  color: white;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-gradient:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.3);
+}
+
+.btn-gradient:active {
+  transform: translateY(0);
+}
+
+/* Animation Utilities */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Map-specific styles */
+.leaflet-container {
+  z-index: 1;
+}
+
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-pane {
+  z-index: 1 !important;
+}
+
+.map-tooltip {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  max-width: 200px;
+}
+
+.dark .map-tooltip {
+  background: rgba(30, 41, 59, 0.95);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+/* For loader animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom map markers */
+.custom-div-icon {
+  background: transparent;
+  border: none;
+}
+
+.custom-cluster-marker {
+  background-color: rgba(140, 21, 21, 0.9);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 36px;
+  font-weight: 600;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  font-family: 'Arial', sans-serif;
+  transition: all 0.3s ease;
+}
+
+.custom-cluster-marker:hover {
+  transform: scale(1.1);
+  background-color: rgba(180, 30, 30, 0.9);
+} 
