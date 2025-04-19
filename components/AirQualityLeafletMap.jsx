@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import { EyeIcon, EyeSlashIcon, MapPinIcon, FireIcon } from '@heroicons/react/24/outline';
+import { EyeIcon, EyeSlashIcon, MapPinIcon, FireIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(
@@ -17,6 +17,23 @@ const MapContainer = dynamic(
 let L;
 if (typeof window !== 'undefined') {
   L = require('leaflet');
+  // Patch Leaflet to clean up container ID and avoid "Map container is already initialized" errors
+  if (L && L.Map && L.DomUtil) {
+    const proto = L.Map.prototype;
+    if (!proto._initContainerPatched) {
+      const originalInitContainer = proto._initContainer;
+      proto._initContainer = function (id) {
+        // Ensure any previous Leaflet ID on the container is removed before initializing
+        const container = typeof id === 'string' ? L.DomUtil.get(id) : id;
+        if (container && container._leaflet_id) {
+          delete container._leaflet_id;
+        }
+        // Call the original init to stamp a fresh ID
+        originalInitContainer.call(this, id);
+      };
+      proto._initContainerPatched = true;
+    }
+  }
 }
 
 const TileLayer = dynamic(
@@ -163,8 +180,10 @@ export default function AirQualityLeafletMap({
   const [zoom, setZoom] = useState(10);
   const [popupInfo, setPopupInfo] = useState(null);
   const [showLegend, setShowLegend] = useState(true);
+  // Toggle clustering of markers
+  const [clusterEnabled, setClusterEnabled] = useState(true);
   const [mapStyle, setMapStyle] = useState(darkMode ? 'dark' : 'streets');
-  const [mapKey, setMapKey] = useState(Date.now()); // Unique key for map remounting
+  // Removed mapKey state; MapContainer will render once without remounting
 
   // Define the field mapping to handle different data formats
   const fieldMapping = useMemo(() => ({
@@ -182,9 +201,10 @@ export default function AirQualityLeafletMap({
   // Get value from an item based on possible field names
   const getFieldValue = useCallback((item, fieldNames) => {
     if (!item || typeof item !== 'object') return null;
-    
-    for (const field of fieldNames) {
-      if (item[field] !== undefined) {
+    // Ensure fieldNames is iterable
+    const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+    for (const field of names) {
+      if (field !== undefined && item[field] !== undefined) {
         return item[field];
       }
     }
@@ -281,13 +301,12 @@ export default function AirQualityLeafletMap({
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
 
+  // Metrics available for display on the map
   const metrics = [
     { value: 'pm25Standard', label: 'PM2.5' },
     { value: 'pm10Standard', label: 'PM10' },
-    { value: 'pm100Standard', label: 'PM100' },
     { value: 'temperature', label: 'Temperature' },
-    { value: 'relativeHumidity', label: 'Humidity' },
-    { value: 'iaq', label: 'Air Quality Index' }
+    { value: 'relativeHumidity', label: 'Humidity' }
   ];
 
   // Define available map styles
@@ -344,26 +363,9 @@ export default function AirQualityLeafletMap({
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [mapStyle]);
 
-  // Force remounting of map if mapStyle changes
-  useEffect(() => {
-    setMapKey(Date.now());
-  }, [mapStyle]);
+  // Removed force remount logic on style change
   
-  // Clean up Leaflet map when component unmounts
-  useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined') {
-        // Force clean up any existing map containers
-        document.querySelectorAll('.leaflet-container').forEach(container => {
-          if (container._leaflet_id) {
-            // This helps clean up any stray Leaflet maps
-            container._leaflet = null;
-            container._leaflet_id = null;
-          }
-        });
-      }
-    };
-  }, []);
+  // Existing cleanup logic is retained; MapContainer unmount cleanup is handled by React Leaflet
 
   // Set initial view based on data
   useEffect(() => {
@@ -434,16 +436,10 @@ export default function AirQualityLeafletMap({
   // Filter data based on requirements
   const filteredData = useMemo(() => {
     if (!data || data.length === 0) {
-      console.log('No data provided to map component');
       return [];
     }
     
     // Log data example to help debug
-    if (data.length > 0) {
-      console.log('Map data example:', data[0]);
-      console.log('Selected metric:', selectedMetric);
-      console.log('Total data points:', data.length);
-    }
     
     // Improved filtering to ensure valid coordinates and metric values
     const filtered = data.filter(item => {
@@ -466,7 +462,6 @@ export default function AirQualityLeafletMap({
       return hasValidCoords && hasMetric;
     });
     
-    console.log(`Filtered to ${filtered.length} valid points with coordinates and metric data`);
     
     return filtered;
   }, [data, selectedMetric, fieldMapping, getFieldValue]);
@@ -676,8 +671,6 @@ export default function AirQualityLeafletMap({
   const renderMarkers = useCallback(() => {
     if (!filteredData || filteredData.length === 0) return null;
     
-    console.log(`Rendering ${filteredData.length} markers from filtered data`);
-    
     // Map between selectedMetric and the simplified metric names used in getMarkerSize/getColorForValue
     const metricMap = {
       'pm25Standard': 'pm25',
@@ -689,7 +682,7 @@ export default function AirQualityLeafletMap({
     // Get the simplified metric name for the color/size functions
     const simplifiedMetric = metricMap[selectedMetric] || selectedMetric;
     
-    return filteredData.map(device => {
+    return filteredData.map((device, idx) => {
       // Get coordinates using our field mapping
       const lat = parseFloat(getFieldValue(device, fieldMapping.latitude));
       const lng = parseFloat(getFieldValue(device, fieldMapping.longitude));
@@ -714,9 +707,11 @@ export default function AirQualityLeafletMap({
       // Get device ID using field mapping
       const deviceId = getFieldValue(device, fieldMapping.deviceId);
       
+      // Use a composite key of deviceId (if available) and index to ensure uniqueness
+      const baseKey = deviceId || `${lat}-${lng}`;
       return (
         <CircleMarker 
-          key={deviceId || `${lat}-${lng}`}
+          key={`${baseKey}-${idx}`}
           center={[lat, lng]} 
           radius={markerSize}
           fillColor={markerColor}
@@ -855,17 +850,19 @@ export default function AirQualityLeafletMap({
       `}</style>
       
       <div className="absolute top-4 right-4 z-10 flex gap-2">
-        <select 
+        {/* Metric selector */}
+        <select
           className={`px-3 py-2 rounded-md text-sm font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             darkMode ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-800 border-gray-200'
           }`}
           value={selectedMetric}
           onChange={e => setSelectedMetric(e.target.value)}
         >
-          <option value="pm25Standard">PM2.5</option>
-          <option value="pm10Standard">PM10</option>
-          <option value="temperature">Temperature</option>
-          <option value="humidity">Humidity</option>
+          {metrics.map(metric => (
+            <option key={metric.value} value={metric.value}>
+              {metric.label}
+            </option>
+          ))}
         </select>
 
         <select 
@@ -875,7 +872,7 @@ export default function AirQualityLeafletMap({
           value={mapStyle}
           onChange={e => {
             setMapStyle(e.target.value);
-            setMapKey(Date.now()); // Force remount the map to apply new style
+            // Removed remount logic; style change now updates tile layer without reinitializing map
           }}
         >
           {Object.entries(mapStyles).map(([key, style]) => (
@@ -911,6 +908,17 @@ export default function AirQualityLeafletMap({
           ) : (
             <FireIcon className="h-5 w-5" />
           )}
+        </button>
+        {/* Cluster toggle: enable or disable marker clustering */}
+        <button
+          className={`p-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            darkMode ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-white text-gray-800 hover:bg-gray-100'
+          }`}
+          onClick={() => setClusterEnabled(prev => !prev)}
+          title={clusterEnabled ? "Disable Clustering" : "Enable Clustering"}
+        >
+          <span className="sr-only">{clusterEnabled ? "Disable Clustering" : "Enable Clustering"}</span>
+          <UserGroupIcon className="h-5 w-5" />
         </button>
       </div>
       
@@ -962,9 +970,9 @@ export default function AirQualityLeafletMap({
       </div>
 
       <div className="relative flex-grow" style={{ height: height || '700px' }}>
-        {typeof window !== 'undefined' && (
+          {typeof window !== 'undefined' && (
           <MapContainer 
-            key={mapKey}
+            // Removed key to avoid duplicate map initialization
             center={mapCenter} 
             zoom={zoom} 
             style={{ height: '100%', width: '100%' }}

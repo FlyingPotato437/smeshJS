@@ -11,6 +11,9 @@ const Navbar = () => {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const { theme, setTheme } = useTheme()
+  // Track mount to avoid hydration mismatches for theme-dependent icons
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   const navigation = [
     { name: 'Home', href: '/' },
@@ -59,8 +62,14 @@ const Navbar = () => {
             <button
               onClick={toggleTheme}
               className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors duration-200"
+              aria-label="Toggle Theme"
             >
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              {/* Avoid SSR vs CSR mismatch by rendering icon only after mount */}
+              {mounted ? (
+                theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />
+              ) : (
+                <span className="inline-block h-5 w-5" />
+              )}
             </button>
 
             {/* Mobile menu button */}

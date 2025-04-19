@@ -78,50 +78,44 @@ export default function DataExplorerPage() {
         const parsedData = JSON.parse(storedData);
         processData(parsedData);
       } else {
-        // Construct query to Supabase
-        let query = supabase.from('sensor_readings').select('*, devices(name, latitude, longitude)');
+        // Fetch data from Supabase air_quality table
+        let query = supabase.from('air_quality').select('*');
         
-        // Apply filters
+        // Apply date filters if provided
         if (filters.dateStart) {
-          query = query.gte('timestamp', filters.dateStart.toISOString());
+          query = query.gte('datetime', filters.dateStart.toISOString());
         }
-        
         if (filters.dateEnd) {
-          query = query.lte('timestamp', filters.dateEnd.toISOString());
+          query = query.lte('datetime', filters.dateEnd.toISOString());
         }
-        
+        // Note: sensor filters based on from_node
         if (filters.sensors && filters.sensors.length > 0) {
-          query = query.in('device_id', filters.sensors);
+          query = query.in('from_node', filters.sensors);
         }
-        
-        // Limit to 10000 records for performance
+        // Limit to reasonable number for performance
         query = query.limit(10000);
         
         const { data: supabaseData, error: supabaseError } = await query;
-        
         if (supabaseError) {
           throw new Error(supabaseError.message);
         }
-        
         if (supabaseData && supabaseData.length > 0) {
-          // Process and normalize the data from sensor_readings table
-          const processedData = supabaseData.map(reading => ({
-            id: reading.id,
-            deviceId: reading.device_id,
-            deviceName: reading.devices?.name || `Device ${reading.device_id}`,
-            datetime: reading.timestamp,
-            timestamp: reading.timestamp,
-            from_node: reading.device_id, // For backward compatibility with existing filter UI
-            latitude: reading.devices?.latitude,
-            longitude: reading.devices?.longitude,
-            pm25Standard: reading.pm25,
-            pm10Standard: reading.pm10,
-            temperature: reading.temperature,
-            relativeHumidity: reading.humidity,
-            voc: reading.voc,
-            co2: reading.co2
+          // Normalize data from air_quality table
+          const processedData = supabaseData.map(record => ({
+            id: record.id,
+            deviceId: record.from_node,
+            deviceName: record.from_node,
+            datetime: record.datetime,
+            timestamp: record.datetime,
+            from_node: record.from_node,
+            latitude: record.latitude,
+            longitude: record.longitude,
+            pm25Standard: record.pm25Standard,
+            pm10Standard: record.pm10Standard,
+            temperature: record.temperature,
+            relativeHumidity: record.relativeHumidity,
+            elevation: record.elevation
           }));
-          
           processData(processedData);
         } else {
           // Fallback to API if Supabase doesn't return data
