@@ -2,45 +2,72 @@ import Link from 'next/link';
 import { ChevronRight, AlertTriangle, UploadCloud, Info } from 'lucide-react';
 import { Error } from '../components/Error';
 import { supabaseAdmin } from '../../lib/supabase';
+import { normalizeSensorData } from '../../lib/mapDataUtils';
 import AirQualityMapClient from './AirQualityMap.client';
 
 export default async function MapPage({ searchParams }) {
   // Server-side data fetch
   let data = [];
   let error = null;
+  
+  // Extract searchParams safely (they're already available)
+  const startDate = searchParams?.startDate || null;
+  const endDate = searchParams?.endDate || null;
+  const uploadId = searchParams?.uploadId || null;
+  const filterId = searchParams?.filterId || null;
+  
   // First, attempt to load from the new sensor_readings/devices schema
   try {
+    // Fetch the most recent readings for each device to ensure we get the latest data
     const newQuery = supabaseAdmin
       .from('sensor_readings')
-      .select('timestamp, pm25, pm10, temperature, humidity, device_id, devices(name, latitude, longitude)');
-    if (searchParams.startDate) newQuery.gte('timestamp', searchParams.startDate);
-    if (searchParams.endDate) newQuery.lte('timestamp', searchParams.endDate);
+      .select('timestamp, pm25, pm10, temperature, humidity, device_id, devices(name, latitude, longitude)')
+      .order('timestamp', { ascending: false })
+      .limit(1000); // Increase limit to get more data points
+      
+    if (startDate) newQuery.gte('timestamp', startDate);
+    if (endDate) newQuery.lte('timestamp', endDate);
+    
     const { data: newRows, error: newError } = await newQuery;
     if (newError) throw newError;
+    
     if (newRows && newRows.length > 0) {
-      data = newRows.map(row => ({
-        latitude: row.devices?.latitude,
-        longitude: row.devices?.longitude,
-        pm25Standard: row.pm25,
-        pm10Standard: row.pm10,
-        temperature: row.temperature,
-        relativeHumidity: row.humidity,
-        datetime: row.timestamp,
-        deviceName: row.devices?.name,
-        deviceId: String(row.device_id)
-      }));
+      console.log(`Fetched ${newRows.length} rows from sensor_readings`); // Debug log
+      
+      // Transform the data to include the device coordinates and normalize fields
+      const mappedRows = newRows
+        .filter(row => row.devices) // Only include rows with valid device data
+        .map(row => ({
+          // Get coordinates from the device record
+          latitude: row.devices?.latitude,
+          longitude: row.devices?.longitude,
+          // Map the readings fields
+          pm25Standard: row.pm25,
+          pm10Standard: row.pm10,
+          temperature: row.temperature,
+          relativeHumidity: row.humidity,
+          // Add metadata
+          datetime: row.timestamp,
+          deviceName: row.devices?.name || `Device ${row.device_id}`,
+          deviceId: String(row.device_id),
+        }));
+      
+      // Apply normalization and validation to ensure all data points are usable
+      data = normalizeSensorData(mappedRows);
+      console.log(`Processed ${data.length} valid points for map`); // Debug log
     }
   } catch (e) {
     console.error('Error querying sensor_readings/devices:', e);
+    // Continue to fallback - don't exit early
   }
   // If no data from new schema, fall back to legacy air_quality table
   if (!data || data.length === 0) {
     try {
       const legacyQuery = supabaseAdmin.from('air_quality').select('*');
-      if (searchParams.uploadId) legacyQuery.eq('upload_id', searchParams.uploadId);
-      if (searchParams.startDate) legacyQuery.gte('timestamp', searchParams.startDate);
-      if (searchParams.endDate) legacyQuery.lte('timestamp', searchParams.endDate);
-      if (searchParams.filterId) legacyQuery.eq('filter_id', searchParams.filterId);
+      if (uploadId) legacyQuery.eq('upload_id', uploadId);
+      if (startDate) legacyQuery.gte('timestamp', startDate);
+      if (endDate) legacyQuery.lte('timestamp', endDate);
+      if (filterId) legacyQuery.eq('filter_id', filterId);
       const { data: legacyRows, error: legError } = await legacyQuery;
       if (legError) throw legError;
       data = (legacyRows || []).map(item => {
@@ -68,15 +95,12 @@ export default async function MapPage({ searchParams }) {
     }
   }
 
-  // Filter to valid geo-coordinates
-  const geoData = (data || []).filter(item =>
-    item.latitude !== undefined &&
-    item.longitude !== undefined &&
-    !isNaN(Number(item.latitude)) &&
-    !isNaN(Number(item.longitude)) &&
-    Number(item.latitude) !== 0 &&
-    Number(item.longitude) !== 0
-  );
+  // Our normalized data should already have valid coordinates
+  // Just make a copy to follow the expected code flow
+  const geoData = [...data];
+  
+  // For debugging, log the available geo data
+  console.log(`Using ${geoData.length} points with valid coordinates`);
 
   // Derive state for rendering
   const hasError = Boolean(error);

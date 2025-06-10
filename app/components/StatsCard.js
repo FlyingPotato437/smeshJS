@@ -48,6 +48,8 @@ const AnimatedGradient = ({
 }) => {
   const containerRef = useRef();
   const dimensions = useDimensions(containerRef);
+  const [randomValues, setRandomValues] = React.useState(null);
+  const [mounted, setMounted] = React.useState(false);
 
   const circleSize = useMemo(
     () => Math.max(dimensions.width, dimensions.height),
@@ -60,29 +62,52 @@ const AnimatedGradient = ({
       : blur === "medium"
       ? "blur-3xl"
       : "blur-[100px]";
+      
+  // Generate random values only on the client side after hydration
+  React.useEffect(() => {
+    setMounted(true);
+    
+    // Generate random values for each color
+    const values = colors.map(() => ({
+      top: Math.random() * 50,
+      left: Math.random() * 50,
+      tx1: Math.random() - 0.5,
+      ty1: Math.random() - 0.5,
+      tx2: Math.random() - 0.5,
+      ty2: Math.random() - 0.5,
+      tx3: Math.random() - 0.5,
+      ty3: Math.random() - 0.5,
+      tx4: Math.random() - 0.5,
+      ty4: Math.random() - 0.5,
+      width: circleSize * randomInt(0.5, 1.5),
+      height: circleSize * randomInt(0.5, 1.5),
+    }));
+    
+    setRandomValues(values);
+  }, [colors.length, circleSize]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden">
       <div className={`absolute inset-0 ${blurClass}`}>
-        {colors.map((color, index) => (
+        {mounted && randomValues && colors.map((color, index) => (
           <svg
             key={index}
             className="absolute animate-background-gradient"
             style={{
-              top: `${Math.random() * 50}%`,
-              left: `${Math.random() * 50}%`,
+              top: `${randomValues[index].top}%`,
+              left: `${randomValues[index].left}%`,
               "--background-gradient-speed": `${1 / speed}s`,
-              "--tx-1": Math.random() - 0.5,
-              "--ty-1": Math.random() - 0.5,
-              "--tx-2": Math.random() - 0.5,
-              "--ty-2": Math.random() - 0.5,
-              "--tx-3": Math.random() - 0.5,
-              "--ty-3": Math.random() - 0.5,
-              "--tx-4": Math.random() - 0.5,
-              "--ty-4": Math.random() - 0.5,
+              "--tx-1": randomValues[index].tx1,
+              "--ty-1": randomValues[index].ty1,
+              "--tx-2": randomValues[index].tx2,
+              "--ty-2": randomValues[index].ty2,
+              "--tx-3": randomValues[index].tx3,
+              "--ty-3": randomValues[index].ty3,
+              "--tx-4": randomValues[index].tx4,
+              "--ty-4": randomValues[index].ty4,
             }}
-            width={circleSize * randomInt(0.5, 1.5)}
-            height={circleSize * randomInt(0.5, 1.5)}
+            width={randomValues[index].width}
+            height={randomValues[index].height}
             viewBox="0 0 100 100"
           >
             <circle
