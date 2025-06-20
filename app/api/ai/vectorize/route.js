@@ -1,146 +1,257 @@
 import { NextResponse } from 'next/server';
+import { OpenAI } from 'openai';
+import { supabase } from '../../../../lib/supabase';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 /**
- * POST handler for vector indexing using Google's embeddings
- * Creates vector representations of data for efficient retrieval
+ * POST /api/ai/vectorize
+ * Generate embeddings and store in vector database
  */
 export async function POST(request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const { text, metadata = {} } = await request.json();
     
-    if (!apiKey) {
-      console.warn('Google API key not configured. Returning mock response.');
-      return NextResponse.json({ 
-        success: true, 
-        message: "Mock vector indexing completed",
-        mockResponse: true 
-      });
-    }
-    
-    const { query, data } = await request.json();
-    
-    if (!query) {
+    if (!text || typeof text !== 'string') {
       return NextResponse.json(
-        { error: 'Query is required' },
+        { error: 'Text is required and must be a string' },
         { status: 400 }
       );
     }
-    
-    // Validate data
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      return NextResponse.json(
-        { error: 'Valid data array is required' },
-        { status: 400 }
-      );
-    }
-    
-    // Import the Google AI SDK only if API key is available
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // Use Google's embedding model (text-embedding-004 is accessed through this API)
-    const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
-    
-    // Process a sample of the data to create vector embeddings
-    // In a real implementation, we would store these in a vector database
-    // For now, we'll just create the embeddings for a few records as proof of concept
-    const sampleSize = Math.min(data.length, 10);
-    const sampleData = data.slice(0, sampleSize);
-    
-    // Create text representations of the sample data
-    const textRepresentations = sampleData.map(item => 
-      `Air quality record: PM2.5: ${item.pm25}, PM10: ${item.pm10}, ` +
-      `Temperature: ${item.temperature}, Humidity: ${item.humidity}, ` +
-      `Datetime: ${item.datetime}, Location: lat ${item.latitude}, lng ${item.longitude}`
-    );
-    
-    // Create embeddings for the query
-    const queryEmbeddingResult = await embeddingModel.embedContent({
-      content: { parts: [{ text: query }] },
+
+    // Generate embedding using OpenAI
+    const embeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
+      encoding_format: 'float'
     });
-    const queryEmbedding = queryEmbeddingResult.embedding.values;
+
+    const embedding = embeddingResponse.data[0].embedding;
     
-    // Create embeddings for the sample data (in a real system, we would do this for all data)
-    const embeddings = await Promise.all(
-      textRepresentations.map(async (text) => {
-        const result = await embeddingModel.embedContent({
-          content: { parts: [{ text }] },
-        });
-        return result.embedding.values;
+    // Store in Supabase vector database
+    const { data, error } = await supabase
+      .from('embeddings')
+      .insert({
+        content: text,
+        metadata: {
+          ...metadata,
+          created_by: 'api',
+          embedding_model: 'text-embedding-3-small'
+        },
+        embedding: embedding
       })
-    );
-    
-    // Calculate simple cosine similarity to find the most relevant records
-    // (In a real system, this would be done by the vector database)
-    const similarities = embeddings.map(embedding => {
-      return calculateCosineSimilarity(queryEmbedding, embedding);
-    });
-    
-    // Return success response with relevant records
-    const relevantIndices = getTopKIndices(similarities, 3);
-    const relevantRecords = relevantIndices.map(idx => sampleData[idx]);
-    
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error storing embedding:', error);
+      return NextResponse.json(
+        { error: 'Failed to store embedding in database' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      message: "Vector indexing completed with Google embeddings",
-      relevantRecordCount: relevantRecords.length,
-      embeddingModel: "embedding-001"
+      id: data.id,
+      embedding_dimensions: embedding.length,
+      metadata: data.metadata
     });
-    
+
   } catch (error) {
-    console.error('Error in vector indexing:', error);
+    console.error('Error in vectorize endpoint:', error);
     
-    // Return a mock response in development or if API key isn't set
-    if (!process.env.GEMINI_API_KEY || process.env.NODE_ENV === 'development') {
-      return NextResponse.json({ 
-        success: true, 
-        message: "Mock vector indexing completed",
-        mockResponse: true 
-      });
+    if (error.code === 'insufficient_quota') {
+      return NextResponse.json({
+        error: 'OpenAI API quota exceeded. Using fallback knowledge base.',
+        fallback: true
+      }, { status: 200 });
     }
     
     return NextResponse.json(
-      { error: error.message || "An error occurred during vector indexing" },
+      { error: error.message || 'Failed to generate embedding' },
       { status: 500 }
     );
   }
 }
 
 /**
- * Calculate cosine similarity between two vectors
+ * GET /api/ai/vectorize/search
+ * Perform semantic search using vector similarity
  */
-function calculateCosineSimilarity(a, b) {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must have the same length');
+export async function GET(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get('q');
+    const threshold = parseFloat(searchParams.get('threshold') || '0.78');
+    const limit = parseInt(searchParams.get('limit') || '5');
+    
+    if (!query) {
+      return NextResponse.json(
+        { error: 'Query parameter "q" is required' },
+        { status: 400 }
+      );
+    }
+
+    // Generate embedding for the search query
+    const embeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: query,
+      encoding_format: 'float'
+    });
+
+    const queryEmbedding = embeddingResponse.data[0].embedding;
+    
+    // Perform vector similarity search
+    const { data, error } = await supabase.rpc('search_embeddings', {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit
+    });
+
+    if (error) {
+      console.error('Error performing vector search:', error);
+      
+      // Fallback to knowledge base search
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .rpc('search_knowledge_base', {
+          search_term: query,
+          limit_count: limit
+        });
+      
+      if (fallbackError) {
+        throw new Error('Both vector and fallback search failed');
+      }
+      
+      return NextResponse.json({
+        results: fallbackData || [],
+        query,
+        method: 'fallback_text_search',
+        threshold,
+        limit
+      });
+    }
+
+    return NextResponse.json({
+      results: data || [],
+      query,
+      method: 'vector_similarity',
+      threshold,
+      limit,
+      found: data?.length || 0
+    });
+
+  } catch (error) {
+    console.error('Error in vector search:', error);
+    
+    // Final fallback - return empty results with error info
+    return NextResponse.json({
+      results: [],
+      error: error.message,
+      fallback_available: true
+    }, { status: 200 });
   }
-  
-  let dotProduct = 0;
-  let aMagnitude = 0;
-  let bMagnitude = 0;
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    aMagnitude += a[i] * a[i];
-    bMagnitude += b[i] * b[i];
-  }
-  
-  aMagnitude = Math.sqrt(aMagnitude);
-  bMagnitude = Math.sqrt(bMagnitude);
-  
-  if (aMagnitude === 0 || bMagnitude === 0) {
-    return 0;
-  }
-  
-  return dotProduct / (aMagnitude * bMagnitude);
 }
 
 /**
- * Get indices of the top k values in an array
+ * PUT /api/ai/vectorize/populate
+ * Populate vector database with knowledge base
  */
-function getTopKIndices(arr, k) {
-  return arr
-    .map((value, index) => ({ value, index }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, k)
-    .map(item => item.index);
-} 
+export async function PUT(request) {
+  try {
+    // Get all knowledge base entries that don't have embeddings yet
+    const { data: knowledgeEntries, error: kbError } = await supabase
+      .from('knowledge_base')
+      .select('*');
+    
+    if (kbError) {
+      throw new Error('Failed to fetch knowledge base entries');
+    }
+
+    const results = [];
+    
+    for (const entry of knowledgeEntries) {
+      try {
+        // Check if embedding already exists
+        const { data: existingEmbedding } = await supabase
+          .from('embeddings')
+          .select('id')
+          .eq('metadata->knowledge_base_id', entry.id)
+          .single();
+        
+        if (existingEmbedding) {
+          results.push({ id: entry.id, status: 'exists', title: entry.title });
+          continue;
+        }
+
+        // Generate embedding for the content
+        const embeddingResponse = await openai.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: `${entry.title}\n\n${entry.content}`,
+          encoding_format: 'float'
+        });
+
+        const embedding = embeddingResponse.data[0].embedding;
+        
+        // Store embedding
+        const { error: insertError } = await supabase
+          .from('embeddings')
+          .insert({
+            content: `${entry.title}\n\n${entry.content}`,
+            metadata: {
+              knowledge_base_id: entry.id,
+              title: entry.title,
+              category: entry.category,
+              source: entry.source,
+              tags: entry.tags,
+              embedding_model: 'text-embedding-3-small'
+            },
+            embedding: embedding
+          });
+
+        if (insertError) {
+          results.push({ 
+            id: entry.id, 
+            status: 'error', 
+            title: entry.title, 
+            error: insertError.message 
+          });
+        } else {
+          results.push({ id: entry.id, status: 'created', title: entry.title });
+        }
+
+      } catch (entryError) {
+        results.push({ 
+          id: entry.id, 
+          status: 'error', 
+          title: entry.title, 
+          error: entryError.message 
+        });
+      }
+    }
+
+    const successful = results.filter(r => r.status === 'created').length;
+    const existing = results.filter(r => r.status === 'exists').length;
+    const errors = results.filter(r => r.status === 'error').length;
+
+    return NextResponse.json({
+      success: true,
+      summary: {
+        total: knowledgeEntries.length,
+        created: successful,
+        existing: existing,
+        errors: errors
+      },
+      details: results
+    });
+
+  } catch (error) {
+    console.error('Error populating vector database:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to populate vector database' },
+      { status: 500 }
+    );
+  }
+}

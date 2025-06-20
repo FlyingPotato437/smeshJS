@@ -9,18 +9,41 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Dynamically import chart components
-const TimeSeriesChart = dynamic(() => import('../components/TimeSeriesChart'), { ssr: false });
-const CorrelationHeatmap = dynamic(() => import('../components/CorrelationHeatmap'), { ssr: false });
-const AirQualityDashboard = dynamic(() => import('../components/AirQualityDashboard'), { ssr: false });
-const BoxPlotChart = dynamic(() => import('../components/BoxPlotChart'), { ssr: false });
-const ScatterPlotMatrix = dynamic(() => import('../components/ScatterPlotMatrix'), { ssr: false });
+// Lazy load components only when needed - prevents bundle bloat
+const ChartLoadingFallback = () => (
+  <div className="w-full h-[400px] flex items-center justify-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 animate-pulse">
+    <div className="w-8 h-8 border-3 border-t-transparent border-blue-500 rounded-full animate-spin"></div>
+    <p className="ml-3 text-gray-600 dark:text-gray-300">Loading chart...</p>
+  </div>
+);
+
+// Load components on demand to improve initial page load
+const TimeSeriesChart = dynamic(() => import('../components/TimeSeriesChart'), { 
+  ssr: false,
+  loading: ChartLoadingFallback
+});
+const CorrelationHeatmap = dynamic(() => import('../components/CorrelationHeatmap'), { 
+  ssr: false,
+  loading: ChartLoadingFallback
+});
+const AirQualityDashboard = dynamic(() => import('../components/AirQualityDashboard'), { 
+  ssr: false,
+  loading: ChartLoadingFallback
+});
+const BoxPlotChart = dynamic(() => import('../components/BoxPlotChart'), { 
+  ssr: false,
+  loading: ChartLoadingFallback
+});
+const ScatterPlotMatrix = dynamic(() => import('../components/ScatterPlotMatrix'), { 
+  ssr: false,
+  loading: ChartLoadingFallback
+});
 const AirQualityMap = dynamic(() => import('../components/AirQualityLeafletMap'), { 
   ssr: false,
   loading: () => (
     <div className="w-full h-[500px] flex items-center justify-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 animate-pulse">
-      <div className="w-12 h-12 border-4 border-t-transparent border-blue-500 rounded-full animate-spin"></div>
-      <p className="ml-3 text-gray-600 dark:text-gray-300">Loading map component...</p>
+      <div className="w-8 h-8 border-3 border-t-transparent border-blue-500 rounded-full animate-spin"></div>
+      <p className="ml-3 text-gray-600 dark:text-gray-300">Loading map...</p>
     </div>
   )
 });
@@ -48,6 +71,8 @@ export default function DataExplorerPage() {
     smoothing: 0, // 0 = none, 1-10 = smoothing level
     showTrend: true
   });
+  const [connectionStatus, setConnectionStatus] = useState('online');
+  const [isOffline, setIsOffline] = useState(false);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: <Grid className="w-4 h-4" /> },
@@ -59,74 +84,80 @@ export default function DataExplorerPage() {
   ];
   
   const metricIcons = {
+    pm1Standard: <Wind className="w-4 h-4" />,
     pm25Standard: <Wind className="w-4 h-4" />,
     pm10Standard: <CloudRain className="w-4 h-4" />,
+    pm100Standard: <CloudRain className="w-4 h-4" />,
     temperature: <ThermometerSun className="w-4 h-4" />,
-    relativeHumidity: <Droplets className="w-4 h-4" />
+    relativeHumidity: <Droplets className="w-4 h-4" />,
+    barometricPressure: <BarChart2 className="w-4 h-4" />,
+    gasResistance: <Wind className="w-4 h-4" />,
+    iaq: <BarChart2 className="w-4 h-4" />,
+    voc: <Wind className="w-4 h-4" />,
+    co2: <CloudRain className="w-4 h-4" />
+  };
+  
+  const metricDisplayNames = {
+    pm1Standard: 'PM1',
+    pm25Standard: 'PM2.5',
+    pm10Standard: 'PM10', 
+    pm100Standard: 'PM100',
+    temperature: 'Temperature',
+    relativeHumidity: 'Humidity',
+    barometricPressure: 'Pressure',
+    gasResistance: 'Gas Res.',
+    iaq: 'IAQ',
+    voc: 'VOC',
+    co2: 'CO2'
   };
 
-  // Function to fetch data from Supabase
+  // Optimized data fetching with better error handling and timeouts
   const fetchData = useCallback(async (filters = {}) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      // Try to get data from localStorage first (for user uploaded data)
-      const storedData = localStorage.getItem('filteredAirQualityData') || localStorage.getItem('airQualityData');
+      console.log('Fetching air quality data directly from legacy schema...');
       
-      if (storedData) {
-        const parsedData = JSON.parse(storedData);
-        processData(parsedData);
-      } else {
-        // Fetch data from Supabase air_quality table
-        let query = supabase.from('air_quality').select('*');
-        
-        // Apply date filters if provided
-        if (filters.dateStart) {
-          query = query.gte('datetime', filters.dateStart.toISOString());
-        }
-        if (filters.dateEnd) {
-          query = query.lte('datetime', filters.dateEnd.toISOString());
-        }
-        // Note: sensor filters based on from_node
-        if (filters.sensors && filters.sensors.length > 0) {
-          query = query.in('from_node', filters.sensors);
-        }
-        // Limit to reasonable number for performance
-        query = query.limit(10000);
-        
-        const { data: supabaseData, error: supabaseError } = await query;
-        if (supabaseError) {
-          throw new Error(supabaseError.message);
-        }
-        if (supabaseData && supabaseData.length > 0) {
-          // Normalize data from air_quality table
-          const processedData = supabaseData.map(record => ({
-            id: record.id,
-            deviceId: record.from_node,
-            deviceName: record.from_node,
-            datetime: record.datetime,
-            timestamp: record.datetime,
-            from_node: record.from_node,
-            latitude: record.latitude,
-            longitude: record.longitude,
-            pm25Standard: record.pm25Standard,
-            pm10Standard: record.pm10Standard,
-            temperature: record.temperature,
-            relativeHumidity: record.relativeHumidity,
-            elevation: record.elevation
-          }));
-          processData(processedData);
-        } else {
-          // Fallback to API if Supabase doesn't return data
-          const response = await fetch('/api/data');
-          if (!response.ok) {
-            throw new Error(`Error: ${response.statusText}`);
-          }
-          const result = await response.json();
-          processData(result.data || []);
-        }
+      // Use air_quality table directly since normalized schema is broken
+      let query = supabase
+        .from('air_quality')
+        .select('*');
+      
+      if (filters.dateStart) {
+        query = query.gte('datetime', filters.dateStart.toISOString());
       }
+      if (filters.dateEnd) {
+        query = query.lte('datetime', filters.dateEnd.toISOString());
+      }
+      if (filters.sensors && filters.sensors.length > 0) {
+        query = query.in('from_node', filters.sensors);
+      }
+      
+      // Don't filter out 0 values - they might be valid readings
+      // Only filter out clearly invalid data
+      query = query
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null)
+        .neq('latitude', 0)
+        .neq('longitude', 0);
+      
+      // Order by datetime descending and limit for performance
+      query = query.order('datetime', { ascending: false }).limit(5000);
+      
+      const { data: rawData, error: supabaseError } = await query;
+      
+      if (supabaseError) {
+        throw new Error(`Supabase error: ${supabaseError.message}`);
+      }
+      
+      if (!rawData || rawData.length === 0) {
+        throw new Error('No data found in air_quality table.');
+      }
+      
+      console.log(`✅ Fetched ${rawData.length} records from air_quality table`);
+      processData(rawData);
+      
     } catch (error) {
       console.error('Error fetching data:', error);
       setError(error.message);
@@ -135,7 +166,7 @@ export default function DataExplorerPage() {
   }, []);
   
   const processData = (fetchedData) => {
-    // Clean and normalize data
+    // Clean and normalize data with robust null handling
     const cleanedData = fetchedData.map(item => {
       // Handle missing datetime
       if (!item.datetime) {
@@ -144,26 +175,55 @@ export default function DataExplorerPage() {
       
       // Convert numeric fields from strings to numbers if needed
       const numericFields = [
-        'pm25Standard', 'pm10Standard', 'pm1Standard', 'pm100Standard',
-        'temperature', 'relativeHumidity', 'pressure', 'iaq', 'voc', 'co2'
+        'pm25', 'pm10', 'temperature', 'humidity', 'co2', 'voc', 'latitude', 'longitude', 'elevation', 'rxsnr', 'hoplimit', 'rxrssi', 'hopstart'
       ];
       
       numericFields.forEach(field => {
-        if (typeof item[field] === 'string') {
+        if (item[field] !== null && item[field] !== undefined && typeof item[field] === 'string') {
           item[field] = parseFloat(item[field]);
         }
       });
       
-      // Ensure latitude and longitude are available and numeric
-      if (item.latitude && typeof item.latitude === 'string') {
-        item.latitude = parseFloat(item.latitude);
-      }
+      // Safely extract device information with null handling
+      const deviceName = item.device?.name || item.from_node || `Device-${item.id}`;
+      const deviceLat = item.device?.latitude || item.latitude || 0;
+      const deviceLng = item.device?.longitude || item.longitude || 0;
+      const deviceElevation = item.device?.elevation || item.elevation || 0;
       
-      if (item.longitude && typeof item.longitude === 'string') {
-        item.longitude = parseFloat(item.longitude);
-      }
-      
-      return item;
+      // Return all fields from the database with safe access
+      return {
+        id: item.id,
+        datetime: item.datetime,
+        from_node: deviceName,
+        deviceId: deviceName,
+        deviceName: deviceName,
+        // All PM measurements
+        pm1Standard: item.pm1,
+        pm25Standard: item.pm25,
+        pm10Standard: item.pm10,
+        pm100Standard: item.pm100,
+        // Weather data
+        temperature: item.temperature,
+        relativeHumidity: item.humidity,
+        barometricPressure: item.barometricPressure,
+        // Air quality data
+        gasResistance: item.gasResistance,
+        iaq: item.iaq,
+        voc: item.voc,
+        co2: item.co2,
+        // Location data with safe fallbacks
+        latitude: deviceLat,
+        longitude: deviceLng,
+        elevation: deviceElevation,
+        // Network data
+        rxsnr: item.rxsnr,
+        hoplimit: item.hoplimit,
+        rxrssi: item.rxrssi,
+        hopstart: item.hopstart,
+        from_short_name: deviceName,
+        // Metadata
+        created_at: item.created_at
+      };
     });
     
     // Set the data
@@ -175,23 +235,35 @@ export default function DataExplorerPage() {
     setAvailableSensors(sensors);
     setSelectedSensors(sensors);
     
-    // Extract metrics
-    const availableMetrics = Object.keys(cleanedData[0] || {}).filter(key => 
-      ['pm25Standard', 'pm10Standard', 'pm1Standard', 'pm100Standard', 'temperature', 
-       'relativeHumidity', 'pressure', 'iaq', 'voc', 'co2'].includes(key)
+    // Extract all available metrics
+    const availableMetrics = [
+      'pm1Standard', 'pm25Standard', 'pm10Standard', 'pm100Standard',
+      'temperature', 'relativeHumidity', 'barometricPressure',
+      'gasResistance', 'iaq', 'voc', 'co2'
+    ].filter(metric => 
+      cleanedData.some(item => item[metric] !== null && item[metric] !== undefined)
     );
     setMetrics(availableMetrics);
     
-    // Extract date range
-    if (cleanedData.length > 0 && cleanedData[0].datetime) {
+    // Set initial selected metrics to the most important ones
+    if (selectedMetrics.length === 0) {
+      setSelectedMetrics(['pm25Standard', 'temperature', 'relativeHumidity']);
+    }
+    
+    // Extract date range - include ALL data
+    if (cleanedData.length > 0) {
       const dates = cleanedData
         .filter(item => item.datetime)
         .map(item => new Date(item.datetime));
       
       if (dates.length > 0) {
+        const minDate = new Date(Math.min(...dates));
+        const maxDate = new Date(Math.max(...dates));
+        
+        // Set date range to include all data
         setDateRange({
-          start: new Date(Math.min(...dates)),
-          end: new Date(Math.max(...dates)),
+          start: minDate,
+          end: maxDate,
         });
       }
     }
@@ -199,6 +271,28 @@ export default function DataExplorerPage() {
     setIsLoading(false);
   };
   
+  // Monitor network status for wifi issues
+  useEffect(() => {
+    const updateOnlineStatus = () => {
+      const online = navigator.onLine;
+      setIsOffline(!online);
+      setConnectionStatus(online ? 'online' : 'offline');
+      console.log('Connection status:', online ? 'online' : 'offline');
+    };
+
+    // Initial check
+    updateOnlineStatus();
+
+    // Listen for network changes
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
   // Fetch data on component mount
   useEffect(() => {
     fetchData();
@@ -288,14 +382,14 @@ export default function DataExplorerPage() {
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8 animate-fadeDown text-center max-w-3xl mx-auto">
-          <div className="inline-block p-3 bg-primary-100 dark:bg-primary-900/30 rounded-full mb-4">
-            <Database className="h-8 w-8 text-primary-600 dark:text-primary-400" />
+          <div className="inline-block p-3 bg-[#8C1515]/10 dark:bg-[#8C1515]/30 rounded-full mb-4">
+            <Database className="h-8 w-8 text-[#8C1515] dark:text-[#f8d6d6]" />
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-gray-800 dark:text-white mb-3">
-            Air Quality Data Explorer
+            Fire Data Explorer
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">
-            Explore and visualize your air quality data with interactive charts and filters.
+            Analyze prescribed fire operations, weather conditions, and burn outcomes with comprehensive data visualization.
           </p>
         </div>
 
@@ -322,13 +416,23 @@ export default function DataExplorerPage() {
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl shadow-md p-8 animate-fadeIn text-center">
             <AlertTriangle className="h-12 w-12 text-yellow-500 dark:text-yellow-400 mx-auto mb-4" />
             <h3 className="text-xl font-medium text-yellow-800 dark:text-yellow-200 mb-2">No Data Available</h3>
-            <p className="text-yellow-700 dark:text-yellow-300 mb-4">There's no air quality data available to explore. Please upload data first.</p>
+            <p className="text-yellow-700 dark:text-yellow-300 mb-4">There&apos;s no air quality data available to explore. Please upload data first.</p>
             <a href="/upload" className="mt-2 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-150">
               Upload Data
             </a>
           </div>
         ) : (
           <div className="animate-fadeUp">
+            {/* Connection Status Banner */}
+            {isOffline && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 shadow-md flex items-center mb-6">
+                <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400 mr-3 flex-shrink-0" />
+                <div className="text-sm text-red-700 dark:text-red-200">
+                  <p>You are currently offline. Showing cached data if available.</p>
+                </div>
+              </div>
+            )}
+            
             {/* Data Info Banner */}
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-4 shadow-md flex items-center mb-6">
               <Info className="h-5 w-5 text-blue-500 dark:text-blue-300 mr-3 flex-shrink-0" />
@@ -338,13 +442,19 @@ export default function DataExplorerPage() {
                   {data.length !== filteredData.length && ` (out of ${data.length.toLocaleString()} total)`}
                   {' '}from <span className="font-medium">{formatDate(dateRange.start)}</span> to{' '}
                   <span className="font-medium">{formatDate(dateRange.end)}</span>
+                  {connectionStatus === 'offline' && ' (cached)'}
                 </p>
               </div>
               <button 
                 onClick={applyFilters}
-                className="ml-auto px-3 py-1 text-xs bg-blue-600 dark:bg-blue-700 text-white rounded-md hover:bg-blue-700 dark:hover:bg-blue-800 transition-colors shadow-sm"
+                disabled={isOffline}
+                className={`ml-auto px-3 py-1 text-xs rounded-md transition-colors shadow-sm ${
+                  isOffline 
+                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                    : 'bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-800'
+                }`}
               >
-                Apply Filters
+                {isOffline ? 'Offline' : 'Apply Filters'}
               </button>
             </div>
             
@@ -443,10 +553,7 @@ export default function DataExplorerPage() {
                               }`}
                             >
                               {metricIcons[metric] && <span className="mr-1">{metricIcons[metric]}</span>}
-                              {metric === 'pm25Standard' ? 'PM2.5' : 
-                               metric === 'pm10Standard' ? 'PM10' : 
-                               metric === 'relativeHumidity' ? 'Humidity' : 
-                               metric}
+                              {metricDisplayNames[metric] || metric}
                             </button>
                           ))}
                         </div>
@@ -619,32 +726,67 @@ export default function DataExplorerPage() {
                           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                             <thead className="bg-gray-50 dark:bg-gray-800/50">
                               <tr>
-                                {filteredData.length > 0 && Object.keys(filteredData[0]).slice(0, 10).map(key => (
-                                  <th 
-                                    key={key} 
-                                    scope="col" 
-                                    className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
-                                  >
-                                    {key}
-                                  </th>
-                                ))}
+                                {/* Show specific important columns */}
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">DateTime</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sensor</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">PM2.5</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">PM10</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Temperature</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Humidity</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pressure</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Latitude</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Longitude</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">IAQ</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">VOC</th>
+                                <th scope="col" className="px-3 py-3.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">CO2</th>
                               </tr>
                             </thead>
                             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                              {filteredData.slice(0, 20).map((row, idx) => (
+                              {filteredData.slice(0, 50).map((row, idx) => (
                                 <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                  {Object.keys(row).slice(0, 10).map(key => (
-                                    <td key={key} className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                                      {typeof row[key] === 'object' ? JSON.stringify(row[key]) : String(row[key] ?? 'N/A')}
-                                    </td>
-                                  ))}
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.datetime ? new Date(row.datetime).toLocaleString() : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.from_node || 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.pm25Standard !== null && row.pm25Standard !== undefined ? row.pm25Standard.toFixed(1) : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.pm10Standard !== null && row.pm10Standard !== undefined ? row.pm10Standard.toFixed(1) : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.temperature !== null && row.temperature !== undefined ? `${row.temperature.toFixed(1)}°C` : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.relativeHumidity !== null && row.relativeHumidity !== undefined ? `${row.relativeHumidity.toFixed(1)}%` : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.barometricPressure !== null && row.barometricPressure !== undefined ? row.barometricPressure.toFixed(1) : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.latitude !== null && row.latitude !== undefined ? row.latitude.toFixed(6) : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.longitude !== null && row.longitude !== undefined ? row.longitude.toFixed(6) : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.iaq !== null && row.iaq !== undefined ? row.iaq : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.voc !== null && row.voc !== undefined ? row.voc : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {row.co2 !== null && row.co2 !== undefined ? row.co2 : 'N/A'}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
-                          {filteredData.length > 20 && (
+                          {filteredData.length > 50 && (
                             <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 text-center">
-                              Showing 20 of {filteredData.length} records
+                              Showing 50 of {filteredData.length} records
                             </div>
                           )}
                         </div>

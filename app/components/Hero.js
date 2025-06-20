@@ -41,10 +41,10 @@ const Particle = ({ className }) => {
 };
 
 const Hero = ({
-  title = "SMesh Analyzer",
-  subtitle = "A specialized tool for Stanford's Wildfire Lab to monitor, analyze, and visualize air quality data across environmental research sites.",
-  ctaText = "Get Started",
-  ctaLink = "/upload",
+  title = "Prescribed Fire GPT",
+  subtitle = "An AI-powered system for prescribed fire management, combining domain expertise with advanced language models to support safer, more effective fire operations.",
+  ctaText = "Start Planning",
+  ctaLink = "/ai-assistant",
   badge = "Stanford University"
 }) => {
   const particles = Array.from({ length: 30 }, (_, i) => i);
@@ -104,11 +104,11 @@ const Hero = ({
                 {ctaText} <MoveRight className="ml-2 h-4 w-4" />
               </button>
             </Link>
-            <Link href="/map">
+            <Link href="/fire-planning">
               <button 
                 className="px-6 py-3 bg-transparent border border-white text-white rounded-lg font-medium hover:bg-white/10 transition-all duration-300 flex items-center"
               >
-                View Data Map
+                Fire Planning Tools
               </button>
             </Link>
           </motion.div>

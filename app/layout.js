@@ -1,17 +1,21 @@
 import './globals.css'
-import { Inter } from 'next/font/google'
+import { Outfit } from 'next/font/google'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import { Providers } from './providers'
 import { SupabaseProvider } from '../utils/supabase-provider'
 
-const inter = Inter({ subsets: ['latin'] })
+const outfit = Outfit({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-outfit'
+})
 
 export const metadata = {
-  title: 'SMesh Analyzer',
-  description: 'A modern application for analyzing air quality data with interactive visualizations and insights.',
-  keywords: 'air quality, data analysis, visualization, environmental monitoring',
-  authors: [{ name: 'Your Name' }],
+  title: 'Prescribed Fire GPT',
+  description: 'AI-powered prescribed fire management system for safer, more effective fire operations.',
+  keywords: 'prescribed fire, wildfire, fire management, AI assistant, risk assessment',
+  authors: [{ name: 'Stanford University' }],
 }
 
 export const viewport = {
@@ -32,7 +36,7 @@ export default function RootLayout({ children }) {
         />
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body className={`${inter.className} bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased flex flex-col min-h-screen`}>
+      <body className={`${outfit.className} bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased flex flex-col min-h-screen`}>
         <Providers>
           <SupabaseProvider>
             <Navbar />

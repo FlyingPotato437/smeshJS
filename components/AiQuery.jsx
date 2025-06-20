@@ -235,80 +235,43 @@ export default function AiQuery({ data = [] }) {
       console.log(`Analyzing ${allData.length} data points`);
       
       if (aiProvider === 'hybrid') {
-        // MULTI-STAGE APPROACH:
+        // PRESCRIBED FIRE GPT PIPELINE:
+        // 1. Initial analysis with OpenAI
+        // 2. Query for SQL data with OpenAI temp 0  
+        // 3. Combine initial + SQL data → Gemini for final analysis
         try {
-          // 1. Vector indexing with Google embeddings
-          setProcessingStage('indexing');
-          const vectorResponse = await fetch('/api/ai/vectorize', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              data: allData,
-              query: query
-            })
-          });
-          
-          if (!vectorResponse.ok) {
-            console.error("Vector indexing failed:", await vectorResponse.text());
-            throw new Error(`Error in vector indexing: ${vectorResponse.statusText}`);
-          }
-          
-          // 2. Initial analysis with OpenAI
           setProcessingStage('analyzing');
-          const analysisResponse = await fetch('/api/ai/query', {
+          const finalResult = await fetch('/api/ai/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              query,
-              data: allData,
-              hasGeoData: processedDataResult.hasGeoData
+              message: query,
+              context: `Fire management data analysis with ${allData.length} data points. Geographic data available: ${processedDataResult.hasGeoData ? 'Yes' : 'No'}`
             })
           });
           
-          if (!analysisResponse.ok) {
-            console.error("OpenAI analysis failed:", await analysisResponse.text());
-            throw new Error(`Error in OpenAI analysis: ${analysisResponse.statusText}`);
+          if (!finalResult.ok) {
+            console.error("Gemini workflow failed:", await finalResult.text());
+            throw new Error(`Error in AI workflow: ${finalResult.statusText}`);
           }
           
-          const initialAnalysis = await analysisResponse.json();
+          const workflowResult = await finalResult.json();
+          console.log("AI workflow completed:", workflowResult);
           
-          // 3. Generate database queries with temperature=0
-          setProcessingStage('querying');
-          const dbQueryResponse = await fetch('/api/ai/generate-query', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query,
-              initialAnalysis: initialAnalysis.result
-            })
-          });
+          // Transform the workflow result to match expected response format
+          const transformedResponse = {
+            result: workflowResult.final_analysis || workflowResult.fallback_analysis,
+            model: workflowResult.models_used ? 
+              `${workflowResult.models_used.initial_analysis} → ${workflowResult.models_used.final_analysis}` : 
+              'AI Workflow',
+            workflow_complete: workflowResult.workflow_complete,
+            data_points: workflowResult.data_points,
+            sql_query: workflowResult.sql_query,
+            initial_analysis: workflowResult.initial_analysis,
+            timestamp: workflowResult.timestamp
+          };
           
-          if (!dbQueryResponse.ok) {
-            console.error("DB query generation failed:", await dbQueryResponse.text());
-            throw new Error(`Error generating database query: ${dbQueryResponse.statusText}`);
-          }
-          
-          // 4. Final synthesis with Gemini and large context window
-          setProcessingStage('synthesizing');
-          const synthesisResponse = await fetch('/api/ai/gemini', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query,
-              data: allData,
-              initialAnalysis: initialAnalysis.result,
-              hasGeoData: processedDataResult.hasGeoData
-            })
-          });
-          
-          if (!synthesisResponse.ok) {
-            console.error("Gemini synthesis failed:", await synthesisResponse.text());
-            throw new Error(`Error in Gemini synthesis: ${synthesisResponse.statusText}`);
-          }
-          
-          const finalResult = await synthesisResponse.json();
-          console.log("AI response received:", finalResult);
-          setResponse(finalResult);
+          setResponse(transformedResponse);
         } catch (stageError) {
           // If any stage fails, try the fallback approach
           console.error("Multi-stage approach failed. Falling back to OpenAI-only:", stageError);
@@ -645,11 +608,8 @@ export default function AiQuery({ data = [] }) {
   const renderProcessingStages = () => {
     const stages = [
       { id: 'preprocessing', label: 'Processing Data', icon: <Database className="h-4 w-4" /> },
-      { id: 'indexing', label: 'Vector Indexing', icon: <Code className="h-4 w-4" /> },
-      { id: 'analyzing', label: 'AI Analysis', icon: <BarChart className="h-4 w-4" /> },
-      { id: 'querying', label: 'Database Query', icon: <Terminal className="h-4 w-4" /> },
-      { id: 'synthesizing', label: 'Final Synthesis', icon: <Sparkles className="h-4 w-4" /> },
-      { id: 'fallback', label: 'Fallback Analysis', icon: <Sparkles className="h-4 w-4" /> }
+      { id: 'analyzing', label: 'OpenAI → SQL → Gemini', icon: <Sparkles className="h-4 w-4" /> },
+      { id: 'fallback', label: 'Fallback Analysis', icon: <BarChart className="h-4 w-4" /> }
     ];
     
     return (
@@ -798,11 +758,8 @@ export default function AiQuery({ data = [] }) {
             <div className="absolute top-0 left-0 w-full h-full border-4 border-t-primary-500 dark:border-t-primary-400 rounded-full animate-spin"></div>
           </div>
           <p className="mt-4 text-gray-600 dark:text-gray-300 text-center">
-            {processingStage === 'preprocessing' && "Processing your data..."}
-            {processingStage === 'indexing' && "Creating vector indexes with Google embeddings..."}
-            {processingStage === 'analyzing' && "Analyzing with OpenAI..."}
-            {processingStage === 'querying' && "Generating database queries..."}
-            {processingStage === 'synthesizing' && "Synthesizing final results with Gemini..."}
+            {processingStage === 'preprocessing' && "Processing your fire management data..."}
+            {processingStage === 'analyzing' && "Running AI workflow: OpenAI analysis → SQL query → Gemini synthesis..."}
             {processingStage === 'fallback' && "Running fallback analysis..."}
             {!processingStage && "Processing your query..."}
           </p>

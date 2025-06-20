@@ -197,15 +197,15 @@ const StatsCard = ({
   );
 };
 
-// Air Quality Dashboard Component
+// Fire Management Dashboard Component
 const AirQualityDashboard = ({ className, airQualityData }) => {
-  // Default data if none is provided
+  // Default fire management data if none is provided
   const data = airQualityData || {
-    pm25: { value: 15.2, change: "+2.3" },
-    pm10: { value: 42.7, change: "-1.5" },
-    temperature: { value: "24°C", change: "+0.8" },
-    humidity: { value: "68%", change: "+5%" },
-    overall: { value: "Good", change: "Improved from yesterday" }
+    totalBurns: { value: 156, change: "+12" },
+    acres: { value: "2,847", change: "+340" },
+    success: { value: "94%", change: "+2%" },
+    riskReduction: { value: "High", change: "Improved community safety" },
+    overall: { value: "Excellent", change: "Meeting all objectives" }
   };
 
   // Stanford color palette
@@ -221,40 +221,40 @@ const AirQualityDashboard = ({ className, airQualityData }) => {
     <div className={`w-full bg-white dark:bg-gray-900 p-4 rounded-lg border border-gray-100 dark:border-gray-700 shadow-md ${className}`}>
       <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white flex items-center">
         <Activity className="h-5 w-5 mr-2 text-[#8C1515]" />
-        Environmental Monitoring
+        Prescribed Fire Operations
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="md:col-span-2">
           <StatsCard
-            title="PM2.5 Concentration"
-            value={`${data.pm25.value} µg/m³`}
-            subtitle={`${data.pm25.change} from yesterday`}
+            title="Total Burns This Season"
+            value={`${data.totalBurns?.value || data.pm25?.value || 156}`}
+            subtitle={`${data.totalBurns?.change || data.pm25?.change || '+12'} from last season`}
             colors={[stanfordColors.cardinal, stanfordColors.brightRed, stanfordColors.sandstone]}
             delay={0.2}
             icon={<Wind className="h-5 w-5" />}
           />
         </div>
         <StatsCard
-          title="PM10 Concentration"
-          value={`${data.pm10.value} µg/m³`}
-          subtitle={`${data.pm10.change} from yesterday`}
+          title="Acres Treated"
+          value={`${data.acres?.value || data.pm10?.value || '2,847'}`}
+          subtitle={`${data.acres?.change || data.pm10?.change || '+340'} from last season`}
           colors={[stanfordColors.brightRed, stanfordColors.sandstone, stanfordColors.gray]}
           delay={0.4}
           icon={<Activity className="h-5 w-5" />}
         />
         <StatsCard
-          title="Temperature"
-          value={data.temperature.value}
-          subtitle={`${data.temperature.change} from yesterday`}
+          title="Success Rate"
+          value={data.success?.value || data.temperature?.value || '94%'}
+          subtitle={`${data.success?.change || data.temperature?.change || '+2%'} from last season`}
           colors={[stanfordColors.sandstone, stanfordColors.brightRed, stanfordColors.cardinal]}
           delay={0.6}
           icon={<Thermometer className="h-5 w-5" />}
         />
         <div className="md:col-span-2">
           <StatsCard
-            title="Humidity"
-            value={data.humidity.value}
-            subtitle={`${data.humidity.change} from yesterday`}
+            title="Risk Reduction Level"
+            value={data.riskReduction?.value || data.humidity?.value || 'High'}
+            subtitle={data.riskReduction?.change || data.humidity?.change || 'Improved community safety'}
             colors={[stanfordColors.gray, stanfordColors.sandstone, stanfordColors.cardinal]}
             delay={0.8}
             icon={<Droplets className="h-5 w-5" />}
@@ -262,9 +262,9 @@ const AirQualityDashboard = ({ className, airQualityData }) => {
         </div>
         <div className="md:col-span-3">
           <StatsCard
-            title="Overall Air Quality"
-            value={data.overall.value}
-            subtitle={data.overall.change}
+            title="Overall Program Status"
+            value={data.overall?.value || 'Excellent'}
+            subtitle={data.overall?.change || 'Meeting all objectives'}
             colors={[stanfordColors.cardinal, stanfordColors.brightRed, stanfordColors.gray]}
             delay={1}
             icon={<Activity className="h-5 w-5" />}

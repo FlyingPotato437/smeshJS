@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Moon, Sun, Menu, X, Wind } from "lucide-react"
+import { Moon, Sun, Menu, X, Flame } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
@@ -17,9 +17,9 @@ const Navbar = () => {
 
   const navigation = [
     { name: 'Home', href: '/' },
-    { name: 'Upload', href: '/upload' },
-    { name: 'Map', href: '/map' },
-    { name: 'Query', href: '/query' },
+    { name: 'AI Assistant', href: '/ai-assistant' },
+    { name: 'Fire Planning', href: '/fire-planning' },
+    { name: 'Risk Assessment', href: '/risk-assessment' },
     { name: 'Data Explorer', href: '/data-explorer' },
   ]
 
@@ -34,8 +34,9 @@ const Navbar = () => {
           {/* Logo and Navigation */}
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-              <Link href="/" className="text-xl font-bold text-[#8C1515] dark:text-[#E18C8C]">
-                SMesh Analyzer
+              <Link href="/" className="flex items-center space-x-2 text-xl font-bold text-[#8C1515] dark:text-[#E18C8C]">
+                <Flame className="h-6 w-6" />
+                <span>Prescribed Fire GPT</span>
               </Link>
             </div>
             
